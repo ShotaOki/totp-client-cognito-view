@@ -25,6 +25,8 @@ def lambda_handler(event, context):
     api_key = os.environ.get("WHAT3WORDS_API_KEY")
     table_name = os.environ.get("DYNAMODB_TABLE_NAME")
 
+    # ワンタイムパスワードを生成する
+    # 今回はwhat3words APIを利用して、日本語のワンタイムパスワードを生成する
     geocoder = what3words.Geocoder(api_key=api_key, language="ja")
     words = geocoder.convert_to_3wa(
         what3words.Coordinates(

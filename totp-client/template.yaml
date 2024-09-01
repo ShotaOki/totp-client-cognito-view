@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  totp-client
+
+  Sample SAM Template for totp-client
+
+Parameters:
+  MailAddress:
+    Type: String
+  What3WordsApiKey:
+    Type: String
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 29
+  Api:
+    Cors:
+      AllowOrigin: "'http://localhost:5173'"
+      AllowCredentials: true
+      AllowMethods: "'POST'"
+      AllowHeaders: "'Content-Type'"
+
+Resources:
+  Database:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: "TotpRecordTable"
+      AttributeDefinitions:
+        - AttributeName: "user_id"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "user_id"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  SNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      TopicName: "user-123456789-topic"
+  SNSSubscription:
+    Type: "AWS::SNS::Subscription"
+    Properties:
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref MailAddress
+      Protocol: "email"
+
+  TOTPClientFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: totp_client/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref SNSTopic
+          DYNAMODB_TABLE_NAME: !Ref Database
+          WHAT3WORDS_API_KEY: !Ref What3WordsApiKey
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: user-123456789-topic
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Database
+      Events:
+        TOTPClientFunctionApi:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /totp
+            Method: post
+
+  VerificateFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: verificate/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref Database
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Database
+      Events:
+        VerificateFunctionApi:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /verificate
+            Method: post

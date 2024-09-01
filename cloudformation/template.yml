@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  # User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Properties:
+      UserPoolName: "UserPool"
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AutoVerifiedAttributes:
+        - email
+      EmailVerificationMessage: "The verification code to your new account is {####}"
+      EmailVerificationSubject: "Verify your new account"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+      MfaConfiguration: "ON"
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+      SmsVerificationMessage: "The verification code to your new account is {####}"
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+      UsernameAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: false
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailMessage: "The verification code to your new account is {####}"
+        EmailSubject: "Verify your new account"
+        SmsMessage: "The verification code to your new account is {####}"
+
+  # User Pool Client
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: "UserPoolClient"
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      ExplicitAuthFlows:
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      UserPoolId:
+        Ref: UserPool
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - profile
+        - phone
+        - email
+        - openid
+        - aws.cognito.signin.user.admin
+      CallbackURLs:
+        - "https://example.com"
+      PreventUserExistenceErrors: "ENABLED"
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # Identity Pool
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    Properties:
+      IdentityPoolName: "IdentityPoolName"
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId:
+            Ref: UserPoolClient
+          ProviderName:
+            Fn::Join:
+              - ""
+              - - cognito-idp.
+                - Ref: "AWS::Region"
+                - .amazonaws.com/
+                - Ref: UserPool
+
+  # Authenticated Policy
+  CognitoAuthenticatedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: "AuthenticatedPolicy for Cognito ID Pool."
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - cognito-sync:*
+              - cognito-identity:*
+            Resource:
+              - "*"
+
+  # Role
+  CognitoAuthenticatedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: "AuthenticatedRole for Cognito ID Pool."
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "sts:AssumeRoleWithWebIdentity"
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Ref: IdentityPool
+              ForAnyValue:StringLike:
+                "cognito-identity.amazonaws.com:amr": authenticated
+      ManagedPolicyArns:
+        - Ref: CognitoAuthenticatedPolicy
+
+  # Attach role for IDPool
+  RoleAttachment:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId:
+        Ref: IdentityPool
+      Roles:
+        authenticated:
+          Fn::GetAtt:
+            - CognitoAuthenticatedRole
+            - Arn
+Outputs:
+  OutputCognitoRegion:
+    Value: !Ref "AWS::Region"
+    Export:
+      Name: CognitoRegion
+  OutputUserPoolId:
+    Value: !Ref UserPool
+    Export:
+      Name: UserPoolId
+  OutputClientId:
+    Value: !Ref UserPoolClient
+    Export:
+      Name: ClientId
+  OutputIdentityPoolId:
+    Value: !Ref IdentityPool
+    Export:
+      Name: IdentityPoolId
